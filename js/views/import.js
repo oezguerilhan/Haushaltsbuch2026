@@ -81,7 +81,9 @@ export function csvLoad(inp) {
   reader.onload = ev => {
     const txt = ev.target.result;
     const lines = txt.trim().split('\n');
-    const delim = lines[0].includes(';') ? ';' : ',';
+    // Detect delimiter from first 15 lines (header may not be line 0)
+    const sample = lines.slice(0, 15).join('\n');
+    const delim = (sample.match(/;/g) || []).length > (sample.match(/,/g) || []).length ? ';' : ',';
     const parsed = lines.map(line => { const cols = []; let cur = '', inQ = false; for (const ch of line) { if (ch === '"') { inQ = !inQ; } else if (ch === delim && !inQ) { cols.push(cur.trim()); cur = ''; } else { cur += ch; } } cols.push(cur.trim()); return cols; });
     if (parsed.length < 2) { notify('⚠ Keine Daten'); return; }
     // Find the actual header row (may not be line 0 — Sparkasse/Deutsche Bank have metadata above)

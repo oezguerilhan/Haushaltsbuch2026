@@ -448,31 +448,37 @@ function getAllTags() {
 }
 
 // ── js/pdfParser.js ─────────────────────────────────────────
-(function(){const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.js';
+(function(){const PDFJS_LOCAL = './pdf.min.js';
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 
 const DE_MONTHS = { 'januar': '01', 'februar': '02', 'märz': '03', 'april': '04', 'mai': '05', 'juni': '06', 'juli': '07', 'august': '08', 'september': '09', 'oktober': '10', 'november': '11', 'dezember': '12',
   'jan': '01', 'feb': '02', 'mär': '03', 'apr': '04', 'jun': '06', 'jul': '07', 'aug': '08', 'sep': '09', 'okt': '10', 'nov': '11', 'dez': '12' };
 
 /**
- * Load PDF.js via script tag (works over file:// and in bundled mode)
+ * Load PDF.js — try local file first (works over file://), then CDN fallback
  */
 let _pdfjsReady = null;
 function getPdfLib() {
   if (typeof window.pdfjsLib !== 'undefined') return Promise.resolve(window.pdfjsLib);
   if (_pdfjsReady) return _pdfjsReady;
   _pdfjsReady = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = PDFJS_CDN;
-    script.onload = () => {
-      if (typeof window.pdfjsLib !== 'undefined') {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-        resolve(window.pdfjsLib);
-      } else {
-        reject(new Error('PDF.js geladen, aber pdfjsLib nicht verfügbar'));
-      }
-    };
-    script.onerror = () => reject(new Error('PDF.js konnte nicht geladen werden. Internetverbindung erforderlich.'));
-    document.head.appendChild(script);
+    function tryLoad(src, fallback) {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = () => {
+        if (typeof window.pdfjsLib !== 'undefined') {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+          resolve(window.pdfjsLib);
+        } else if (fallback) { tryLoad(fallback, null); }
+        else { reject(new Error('PDF.js geladen, aber pdfjsLib nicht verfügbar')); }
+      };
+      s.onerror = () => {
+        if (fallback) { tryLoad(fallback, null); }
+        else { reject(new Error('PDF.js nicht verfügbar. Bitte pdf.min.js neben die HTML-Datei legen oder Internetverbindung herstellen.')); }
+      };
+      document.head.appendChild(s);
+    }
+    tryLoad(PDFJS_LOCAL, PDFJS_CDN);
   });
   return _pdfjsReady;
 }
@@ -1096,7 +1102,9 @@ function csvLoad(inp) {
   reader.onload = ev => {
     const txt = ev.target.result;
     const lines = txt.trim().split('\n');
-    const delim = lines[0].includes(';') ? ';' : ',';
+    // Detect delimiter from first 15 lines (header may not be line 0)
+    const sample = lines.slice(0, 15).join('\n');
+    const delim = (sample.match(/;/g) || []).length > (sample.match(/,/g) || []).length ? ';' : ',';
     const parsed = lines.map(line => { const cols = []; let cur = '', inQ = false; for (const ch of line) { if (ch === '"') { inQ = !inQ; } else if (ch === delim && !inQ) { cols.push(cur.trim()); cur = ''; } else { cur += ch; } } cols.push(cur.trim()); return cols; });
     if (parsed.length < 2) { notify('⚠ Keine Daten'); return; }
     // Find the actual header row (may not be line 0 — Sparkasse/Deutsche Bank have metadata above)
@@ -1591,7 +1599,7 @@ window.saveSplit = saveSplit;
 })();
 
 // ── js/router.js ────────────────────────────────────────────
-(function(){let _view = 'dash';
+let _view = 'dash';
 let _month = curYM();
 function navigate(v) {
   _view = v;
@@ -1628,15 +1636,6 @@ function mthNav() {
   const [y, m] = _month.split('-').map(Number);
   return `<div class="mth-nav"><button data-action="prevMonth">‹</button><span>${MONTHS_L[m - 1]} ${y}</span><button data-action="nextMonth">›</button></div>`;
 }
-window.navigate = navigate;
-window.render = render;
-window.prevMonth = prevMonth;
-window.nextMonth = nextMonth;
-window.setMonth = setMonth;
-window.mthNav = mthNav;
-window._view = _view;
-window._month = _month;
-})();
 
 // ── js/app.js ───────────────────────────────────────────────
 // ── INIT ──────────────────────────────────────────────────────────

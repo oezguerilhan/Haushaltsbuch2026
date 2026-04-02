@@ -66,9 +66,11 @@ let html = fs.readFileSync(path.join(ROOT, 'haushaltsbuch.html'), 'utf-8');
 // Modules whose exports are only consumed internally (not by app.js event handlers)
 // don't need global exposure. Leaf modules (constants, db, charts, modal, utils) are
 // consumed by everything, so they stay in global scope.
+// These modules stay in global scope (no IIFE wrapping).
+// All others get IIFE-wrapped, with exported functions assigned to global vars.
 const GLOBAL_SCOPE = new Set([
   'js/constants.js', 'js/db.js', 'js/charts.js', 'js/modal.js',
-  'js/utils.js', 'js/state.js', 'js/app.js',
+  'js/utils.js', 'js/state.js', 'js/router.js', 'js/app.js',
 ]);
 
 const jsChunks = MODULE_ORDER.map(modPath => {

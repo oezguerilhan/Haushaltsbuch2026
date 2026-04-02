@@ -2,31 +2,37 @@
 
 import { uid, parseDeDate, guessCategory } from './utils.js';
 
-const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.js';
+const PDFJS_LOCAL = './pdf.min.js';
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 
 const DE_MONTHS = { 'januar': '01', 'februar': '02', 'märz': '03', 'april': '04', 'mai': '05', 'juni': '06', 'juli': '07', 'august': '08', 'september': '09', 'oktober': '10', 'november': '11', 'dezember': '12',
   'jan': '01', 'feb': '02', 'mär': '03', 'apr': '04', 'jun': '06', 'jul': '07', 'aug': '08', 'sep': '09', 'okt': '10', 'nov': '11', 'dez': '12' };
 
 /**
- * Load PDF.js via script tag (works over file:// and in bundled mode)
+ * Load PDF.js — try local file first (works over file://), then CDN fallback
  */
 let _pdfjsReady = null;
 function getPdfLib() {
   if (typeof window.pdfjsLib !== 'undefined') return Promise.resolve(window.pdfjsLib);
   if (_pdfjsReady) return _pdfjsReady;
   _pdfjsReady = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = PDFJS_CDN;
-    script.onload = () => {
-      if (typeof window.pdfjsLib !== 'undefined') {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-        resolve(window.pdfjsLib);
-      } else {
-        reject(new Error('PDF.js geladen, aber pdfjsLib nicht verfügbar'));
-      }
-    };
-    script.onerror = () => reject(new Error('PDF.js konnte nicht geladen werden. Internetverbindung erforderlich.'));
-    document.head.appendChild(script);
+    function tryLoad(src, fallback) {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = () => {
+        if (typeof window.pdfjsLib !== 'undefined') {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+          resolve(window.pdfjsLib);
+        } else if (fallback) { tryLoad(fallback, null); }
+        else { reject(new Error('PDF.js geladen, aber pdfjsLib nicht verfügbar')); }
+      };
+      s.onerror = () => {
+        if (fallback) { tryLoad(fallback, null); }
+        else { reject(new Error('PDF.js nicht verfügbar. Bitte pdf.min.js neben die HTML-Datei legen oder Internetverbindung herstellen.')); }
+      };
+      document.head.appendChild(s);
+    }
+    tryLoad(PDFJS_LOCAL, PDFJS_CDN);
   });
   return _pdfjsReady;
 }
