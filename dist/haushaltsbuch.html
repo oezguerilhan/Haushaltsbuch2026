@@ -450,8 +450,11 @@ function getAllTags() {
 // ── js/pdfParser.js ─────────────────────────────────────────
 (function(){const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.js';
 
+const DE_MONTHS = { 'januar': '01', 'februar': '02', 'märz': '03', 'april': '04', 'mai': '05', 'juni': '06', 'juli': '07', 'august': '08', 'september': '09', 'oktober': '10', 'november': '11', 'dezember': '12',
+  'jan': '01', 'feb': '02', 'mär': '03', 'apr': '04', 'jun': '06', 'jul': '07', 'aug': '08', 'sep': '09', 'okt': '10', 'nov': '11', 'dez': '12' };
+
 /**
- * Load PDF.js via script tag (works in both module and bundled mode, and over file://)
+ * Load PDF.js via script tag (works over file:// and in bundled mode)
  */
 let _pdfjsReady = null;
 function getPdfLib() {
@@ -465,7 +468,7 @@ function getPdfLib() {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
         resolve(window.pdfjsLib);
       } else {
-        reject(new Error('PDF.js wurde geladen, aber pdfjsLib ist nicht verfügbar'));
+        reject(new Error('PDF.js geladen, aber pdfjsLib nicht verfügbar'));
       }
     };
     script.onerror = () => reject(new Error('PDF.js konnte nicht geladen werden. Internetverbindung erforderlich.'));
@@ -475,92 +478,219 @@ function getPdfLib() {
 }
 
 /**
- * Extract text lines from a PDF file, grouped by Y position
+ * Extract structured items from PDF with their positions
  */
-async function extractTextLines(file) {
+async function extractPdfItems(file) {
   const lib = await getPdfLib();
-
   const arrayBuf = await file.arrayBuffer();
   const pdf = await lib.getDocument({ data: arrayBuf }).promise;
-  const allLines = [];
+  const allItems = [];
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
-
-    // Group text items by Y position (same line = similar Y)
-    const yGroups = {};
     for (const item of content.items) {
       if (!item.str || !item.str.trim()) continue;
-      const y = Math.round(item.transform[5]);
-      if (!yGroups[y]) yGroups[y] = [];
-      yGroups[y].push({ text: item.str, x: item.transform[4] });
-    }
-
-    // Sort by Y descending (top of page first), then by X within line
-    const sortedYs = Object.keys(yGroups).map(Number).sort((a, b) => b - a);
-    for (const y of sortedYs) {
-      const items = yGroups[y].sort((a, b) => a.x - b.x);
-      const lineText = items.map(i => i.text).join(' ').trim();
-      if (lineText) allLines.push(lineText);
+      allItems.push({
+        text: item.str.trim(),
+        x: Math.round(item.transform[4]),
+        y: Math.round(item.transform[5]),
+        page: pageNum
+      });
     }
   }
 
-  return allLines;
+  return allItems;
 }
 
 /**
- * Parse Trade Republic bank statement lines into transactions
+ * Parse Trade Republic PDF format.
+ * Date is multiline: "01\nMärz\n2026"
+ * Columns: DATUM | TYP | BESCHREIBUNG | ZAHLUNGSEINGANG | ZAHLUNGSAUSGANG | SALDO
+ * Amounts are in separate Ein/Ausgang columns (not +/-)
  */
-function parseTradeRepublic(lines) {
+function parseTradeRepublic(items) {
   const transactions = [];
-  const dateRe = /(\d{2}\.\d{2}\.\d{4})/;
-  const amountRe = /([+-]?\s?\d{1,3}(?:\.\d{3})*,\d{2})\s*€?/;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const dateMatch = line.match(dateRe);
-    if (!dateMatch) continue;
+  // Sort items by page, then Y descending (top first), then X ascending
+  items.sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x);
 
-    const amountMatch = line.match(amountRe);
-    if (!amountMatch) continue;
+  // Group items into rows by Y position (tolerance of 3px)
+  const rows = [];
+  let currentRow = [];
+  let lastY = null;
 
-    const dateStr = dateMatch[1];
-    const rawAmount = amountMatch[1].replace(/\s/g, '');
-    const numAmount = parseFloat(rawAmount.replace(/\./g, '').replace(',', '.'));
-    if (isNaN(numAmount) || numAmount === 0) continue;
+  for (const item of items) {
+    if (lastY !== null && Math.abs(item.y - lastY) > 3) {
+      if (currentRow.length) rows.push({ y: lastY, items: [...currentRow] });
+      currentRow = [];
+    }
+    currentRow.push(item);
+    lastY = item.y;
+  }
+  if (currentRow.length) rows.push({ y: lastY, items: currentRow });
 
-    let desc = line;
-    desc = desc.replace(dateRe, '').replace(amountRe, '').replace(/€/g, '').trim();
-    desc = desc.replace(/^(Kartenzahlung|Überweisung|Lastschrift|Zinsen|Saveback|Gehalt|Gutschrift)\s*/i, (m) => m.trim() + ': ').replace(/:\s*$/, '').trim();
-    if (!desc) desc = 'Transaktion';
+  // Parse: scan for date patterns and collect transaction data
+  // Trade Republic dates are split across 3 rows: day, month name, year
+  let i = 0;
+  while (i < rows.length) {
+    const rowText = rows[i].items.map(it => it.text).join(' ');
 
-    const type = numAmount < 0 ? 'expense' : 'income';
-    const amount = Math.abs(numAmount);
+    // Skip header rows, footer, and non-data rows
+    if (/^DATUM|^PRODUKT|^KONTOÜBER|^UMSATZÜBER|^BARMITTEL|^HINWEISE|^GELDMARKT|^TREUHAND|Trade Republic|Brunnenstr|Berlin|Geschäftsführer|Erstellt am|Sitz der|Umsatzsteuer|^Seite \d|^www\.|^AG Char/i.test(rowText)) {
+      i++;
+      continue;
+    }
 
-    transactions.push({
-      id: uid(),
-      date: parseDeDate(dateStr),
-      amount,
-      type,
-      description: desc,
-      category: guessCategory(desc) || (type === 'income' ? 'sonstiges_e' : 'sonstiges_a'),
-      account: 'girokonto',
-      tags: [],
-      source: 'import',
-      createdAt: Date.now(),
-      note: 'PDF-Import',
-    });
+    // Try to detect a day number (1-31) at the start of a row
+    const dayMatch = rows[i].items[0]?.text.match(/^(\d{1,2})$/);
+    if (!dayMatch) { i++; continue; }
+
+    const day = dayMatch[1].padStart(2, '0');
+
+    // Next row should be month name (März, April, etc.)
+    if (i + 1 >= rows.length) { i++; continue; }
+    const monthRow = rows[i + 1].items.map(it => it.text).join(' ');
+    const monthKey = monthRow.trim().toLowerCase().split(/\s/)[0];
+    const month = DE_MONTHS[monthKey];
+    if (!month) { i++; continue; }
+
+    // Next row should be year (2026)
+    if (i + 2 >= rows.length) { i++; continue; }
+    const yearRow = rows[i + 2].items.map(it => it.text).join(' ');
+    const yearMatch = yearRow.match(/^(20\d{2})/);
+    if (!yearMatch) { i++; continue; }
+    const year = yearMatch[1];
+    const dateStr = `${day}.${month}.${year}`;
+
+    // The year row often also contains: Typ, Beschreibung, amounts
+    // But sometimes Typ is on the month row. Collect all items from month+year rows
+    const monthItems = rows[i + 1].items;
+    const yearItems = rows[i + 2].items;
+    const allRowItems = [...monthItems, ...yearItems].sort((a, b) => a.x - b.x);
+
+    // Extract amounts: look for "€" pattern numbers
+    const amountRe = /^(\d{1,3}(?:\.\d{3})*,\d{2})\s*€?$/;
+    let eingang = 0, ausgang = 0, saldo = 0;
+    let typ = '', beschreibung = '';
+    const textParts = [];
+    const amounts = [];
+
+    for (const it of allRowItems) {
+      const cleaned = it.text.replace(/€/g, '').trim();
+      const amtMatch = cleaned.match(/^(\d{1,3}(?:\.\d{3})*,\d{2})$/);
+      if (amtMatch) {
+        amounts.push({ value: parseFloat(amtMatch[1].replace(/\./g, '').replace(',', '.')), x: it.x });
+      } else if (it.text !== year && it.text !== monthRow.trim().split(/\s/)[0] && !/^\d{1,2}$/.test(it.text) && it.text !== '€') {
+        textParts.push(it.text);
+      }
+    }
+
+    // Check if there are continuation rows (description spanning multiple lines)
+    let extraIdx = i + 3;
+    while (extraIdx < rows.length) {
+      const nextRowItems = rows[extraIdx].items;
+      const nextText = nextRowItems.map(it => it.text).join(' ');
+      // Stop if we hit another day number (next transaction) or a section header
+      if (/^\d{1,2}$/.test(nextRowItems[0]?.text) && extraIdx + 1 < rows.length) {
+        const peekMonth = rows[extraIdx + 1]?.items.map(it => it.text).join(' ').trim().toLowerCase().split(/\s/)[0];
+        if (DE_MONTHS[peekMonth]) break;
+      }
+      if (/^DATUM|^PRODUKT|^BARMITTEL|^HINWEISE|^GELDMARKT|Trade Republic|Brunnenstr/i.test(nextText)) break;
+      // Collect text and amounts from continuation rows
+      for (const it of nextRowItems) {
+        const cleaned = it.text.replace(/€/g, '').trim();
+        const amtMatch = cleaned.match(/^(\d{1,3}(?:\.\d{3})*,\d{2})$/);
+        if (amtMatch) {
+          amounts.push({ value: parseFloat(amtMatch[1].replace(/\./g, '').replace(',', '.')), x: it.x });
+        } else if (it.text !== '€') {
+          textParts.push(it.text);
+        }
+      }
+      extraIdx++;
+    }
+
+    // Parse text parts: first word(s) are Typ, rest is Beschreibung
+    const fullText = textParts.join(' ').trim();
+    // Known Trade Republic types
+    const typMatch = fullText.match(/^(Kartentransaktion|Überweisung|Handel|Bonus|Zinsen|Lastschrift|Gutschrift|Dividende)\s*/i);
+    if (typMatch) {
+      typ = typMatch[1];
+      beschreibung = fullText.substring(typMatch[0].length).trim();
+    } else {
+      beschreibung = fullText;
+    }
+
+    // Amounts: typically [eingang or ausgang, saldo] or [eingang, ausgang, saldo]
+    // Saldo is always the last (rightmost) amount. Eingang/Ausgang depends on position.
+    if (amounts.length >= 2) {
+      saldo = amounts[amounts.length - 1].value;
+      // If there's exactly 2 amounts, the first is either eingang or ausgang
+      // If 3, first is eingang, second is ausgang
+      if (amounts.length === 3) {
+        eingang = amounts[0].value;
+        ausgang = amounts[1].value;
+      } else {
+        // 2 amounts: determine if eingang or ausgang by checking column position
+        // Eingang is usually left of Ausgang. Or: if saldo > previous saldo, it's eingang
+        const amt = amounts[0].value;
+        // Heuristic: if typ is Überweisung/Bonus/Zinsen/Gutschrift/Dividende → likely income
+        if (/überweisung|bonus|zinsen|gutschrift|dividende|incoming/i.test(fullText)) {
+          eingang = amt;
+        } else {
+          ausgang = amt;
+        }
+      }
+    } else if (amounts.length === 1) {
+      // Only saldo, skip this row (it's likely a header or summary)
+      i = extraIdx;
+      continue;
+    } else {
+      i = extraIdx;
+      continue;
+    }
+
+    const amount = eingang > 0 ? eingang : ausgang;
+    const type = eingang > 0 ? 'income' : 'expense';
+
+    if (amount > 0) {
+      const desc = beschreibung || typ || 'Transaktion';
+      transactions.push({
+        id: uid(),
+        date: parseDeDate(dateStr),
+        amount,
+        type,
+        description: typ ? `${typ}: ${beschreibung}` : desc,
+        category: guessCategory(desc) || (type === 'income' ? 'sonstiges_e' : 'sonstiges_a'),
+        account: 'girokonto',
+        tags: [],
+        source: 'import',
+        createdAt: Date.now(),
+        note: 'PDF-Import (Trade Republic)',
+      });
+    }
+
+    i = extraIdx;
   }
 
   return transactions;
 }
 
 /**
- * Generic bank statement parser — fallback for non-Trade-Republic PDFs
+ * Generic bank statement parser fallback
  */
-function parseGenericBank(lines) {
+function parseGenericBank(items) {
   const transactions = [];
+  // Group into lines by Y
+  const yGroups = {};
+  for (const item of items) {
+    const y = Math.round(item.y);
+    if (!yGroups[y]) yGroups[y] = [];
+    yGroups[y].push(item);
+  }
+  const lines = Object.keys(yGroups).map(Number).sort((a, b) => b - a)
+    .map(y => yGroups[y].sort((a, b) => a.x - b.x).map(i => i.text).join(' '));
+
   const dateRe = /(\d{1,2}\.\d{1,2}\.\d{2,4})/;
   const amountRe = /(-?\d{1,3}(?:\.\d{3})*,\d{2})/;
 
@@ -570,17 +700,13 @@ function parseGenericBank(lines) {
     if (!dateMatch || !amountMatch) continue;
 
     let fullDate = dateMatch[1];
-    if (/\.\d{2}$/.test(fullDate)) {
-      fullDate = fullDate.replace(/\.(\d{2})$/, '.20$1');
-    }
+    if (/\.\d{2}$/.test(fullDate)) fullDate = fullDate.replace(/\.(\d{2})$/, '.20$1');
 
-    const rawAmount = amountMatch[1];
-    const numAmount = parseFloat(rawAmount.replace(/\./g, '').replace(',', '.'));
+    const numAmount = parseFloat(amountMatch[1].replace(/\./g, '').replace(',', '.'));
     if (isNaN(numAmount) || numAmount === 0) continue;
 
     let desc = line.replace(dateRe, '').replace(amountRe, '').replace(/€/g, '').trim();
     if (!desc) desc = 'Transaktion';
-
     const type = numAmount < 0 ? 'expense' : 'income';
 
     transactions.push({
@@ -605,12 +731,11 @@ function parseGenericBank(lines) {
  * Main entry: parse a PDF file into transactions
  */
 async function parsePdfFile(file) {
-  const lines = await extractTextLines(file);
+  const items = await extractPdfItems(file);
+  const fullText = items.map(i => i.text).join(' ');
+  const isTradeRepublic = /trade\s*republic|TRBKDEBBXXX/i.test(fullText);
 
-  const fullText = lines.join(' ');
-  const isTradeRepublic = /trade\s*republic|TR\s*Technologies/i.test(fullText);
-
-  let txs = isTradeRepublic ? parseTradeRepublic(lines) : parseGenericBank(lines);
+  let txs = isTradeRepublic ? parseTradeRepublic(items) : parseGenericBank(items);
 
   // Deduplicate
   const seen = new Set();
@@ -941,10 +1066,26 @@ function reImport() {
 
 function csvParseRow(r) {
   const di = parseInt(_map.date), ai = parseInt(_map.amount), xi = parseInt(_map.desc);
-  const raw = ai >= 0 ? r[ai] || '0' : '0';
-  const num = parseFloat(raw.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.'));
-  const amt = isNaN(num) ? 0 : Math.abs(num);
-  const type = num < 0 ? 'expense' : 'income';
+  const si = parseInt(_map.soll), hi = parseInt(_map.haben);
+  let num = 0, type = 'expense';
+
+  if (si >= 0 && hi >= 0) {
+    // Sparkasse/Deutsche Bank format: separate Soll (debit) and Haben (credit) columns
+    const sollRaw = (r[si] || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
+    const habenRaw = (r[hi] || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
+    const sollVal = parseFloat(sollRaw) || 0;
+    const habenVal = parseFloat(habenRaw) || 0;
+    if (habenVal > 0) { num = habenVal; type = 'income'; }
+    else if (sollVal) { num = Math.abs(sollVal); type = 'expense'; }
+  } else if (ai >= 0) {
+    // Single Betrag column
+    const raw = r[ai] || '0';
+    num = parseFloat(raw.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.'));
+    type = num < 0 ? 'expense' : 'income';
+    num = Math.abs(num);
+  }
+
+  const amt = isNaN(num) ? 0 : num;
   const desc = xi >= 0 ? r[xi] || '' : '';
   return { id: uid(), date: parseDeDate(di >= 0 ? r[di] || today() : today()), amount: amt, type, description: desc, category: guessCategory(desc) || (type === 'income' ? 'sonstiges_e' : 'sonstiges_a'), account: 'girokonto', tags: [], source: 'import', createdAt: Date.now(), note: '' };
 }
@@ -958,9 +1099,22 @@ function csvLoad(inp) {
     const delim = lines[0].includes(';') ? ';' : ',';
     const parsed = lines.map(line => { const cols = []; let cur = '', inQ = false; for (const ch of line) { if (ch === '"') { inQ = !inQ; } else if (ch === delim && !inQ) { cols.push(cur.trim()); cur = ''; } else { cur += ch; } } cols.push(cur.trim()); return cols; });
     if (parsed.length < 2) { notify('⚠ Keine Daten'); return; }
-    _hdr = parsed[0]; _rows = parsed.slice(1);
+    // Find the actual header row (may not be line 0 — Sparkasse/Deutsche Bank have metadata above)
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(parsed.length, 15); i++) {
+      const row = parsed[i].map(x => x.toLowerCase()).join(' ');
+      if (/buchungstag|datum|date|valuta/.test(row) && /betrag|soll|haben|amount/.test(row)) { headerIdx = i; break; }
+    }
+    _hdr = parsed[headerIdx]; _rows = parsed.slice(headerIdx + 1).filter(r => r.length >= _hdr.length - 1 && r.some(c => c.trim()));
     const hl = _hdr.map(x => x.toLowerCase());
-    _map = { date: String(hl.findIndex(x => /datum|date|buchung|valuta/i.test(x))), amount: String(hl.findIndex(x => /betrag|amount|summe|wert|umsatz/i.test(x))), desc: String(hl.findIndex(x => /verwendung|beschreibung|desc|memo|text|name|auftraggeber/i.test(x))) };
+    _map = {
+      date: String(hl.findIndex(x => /buchungstag|datum|date|valuta/i.test(x))),
+      amount: String(hl.findIndex(x => /^betrag$|^amount$/i.test(x))),
+      desc: String(hl.findIndex(x => /verwendung|beschreibung|desc|memo|text|begünstigter|auftraggeber/i.test(x))),
+    };
+    // Sparkasse/Deutsche Bank: Soll/Haben separate columns instead of single Betrag
+    _map.soll = String(hl.findIndex(x => /^soll$/i.test(x)));
+    _map.haben = String(hl.findIndex(x => /^haben$/i.test(x)));
     _step = 2; reImport();
   };
   reader.readAsText(f, 'UTF-8');

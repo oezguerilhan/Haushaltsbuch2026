@@ -50,10 +50,26 @@ function reImport() {
 
 function csvParseRow(r) {
   const di = parseInt(_map.date), ai = parseInt(_map.amount), xi = parseInt(_map.desc);
-  const raw = ai >= 0 ? r[ai] || '0' : '0';
-  const num = parseFloat(raw.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.'));
-  const amt = isNaN(num) ? 0 : Math.abs(num);
-  const type = num < 0 ? 'expense' : 'income';
+  const si = parseInt(_map.soll), hi = parseInt(_map.haben);
+  let num = 0, type = 'expense';
+
+  if (si >= 0 && hi >= 0) {
+    // Sparkasse/Deutsche Bank format: separate Soll (debit) and Haben (credit) columns
+    const sollRaw = (r[si] || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
+    const habenRaw = (r[hi] || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
+    const sollVal = parseFloat(sollRaw) || 0;
+    const habenVal = parseFloat(habenRaw) || 0;
+    if (habenVal > 0) { num = habenVal; type = 'income'; }
+    else if (sollVal) { num = Math.abs(sollVal); type = 'expense'; }
+  } else if (ai >= 0) {
+    // Single Betrag column
+    const raw = r[ai] || '0';
+    num = parseFloat(raw.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.'));
+    type = num < 0 ? 'expense' : 'income';
+    num = Math.abs(num);
+  }
+
+  const amt = isNaN(num) ? 0 : num;
   const desc = xi >= 0 ? r[xi] || '' : '';
   return { id: uid(), date: parseDeDate(di >= 0 ? r[di] || today() : today()), amount: amt, type, description: desc, category: guessCategory(desc) || (type === 'income' ? 'sonstiges_e' : 'sonstiges_a'), account: 'girokonto', tags: [], source: 'import', createdAt: Date.now(), note: '' };
 }
@@ -68,9 +84,22 @@ export function csvLoad(inp) {
     const delim = lines[0].includes(';') ? ';' : ',';
     const parsed = lines.map(line => { const cols = []; let cur = '', inQ = false; for (const ch of line) { if (ch === '"') { inQ = !inQ; } else if (ch === delim && !inQ) { cols.push(cur.trim()); cur = ''; } else { cur += ch; } } cols.push(cur.trim()); return cols; });
     if (parsed.length < 2) { notify('⚠ Keine Daten'); return; }
-    _hdr = parsed[0]; _rows = parsed.slice(1);
+    // Find the actual header row (may not be line 0 — Sparkasse/Deutsche Bank have metadata above)
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(parsed.length, 15); i++) {
+      const row = parsed[i].map(x => x.toLowerCase()).join(' ');
+      if (/buchungstag|datum|date|valuta/.test(row) && /betrag|soll|haben|amount/.test(row)) { headerIdx = i; break; }
+    }
+    _hdr = parsed[headerIdx]; _rows = parsed.slice(headerIdx + 1).filter(r => r.length >= _hdr.length - 1 && r.some(c => c.trim()));
     const hl = _hdr.map(x => x.toLowerCase());
-    _map = { date: String(hl.findIndex(x => /datum|date|buchung|valuta/i.test(x))), amount: String(hl.findIndex(x => /betrag|amount|summe|wert|umsatz/i.test(x))), desc: String(hl.findIndex(x => /verwendung|beschreibung|desc|memo|text|name|auftraggeber/i.test(x))) };
+    _map = {
+      date: String(hl.findIndex(x => /buchungstag|datum|date|valuta/i.test(x))),
+      amount: String(hl.findIndex(x => /^betrag$|^amount$/i.test(x))),
+      desc: String(hl.findIndex(x => /verwendung|beschreibung|desc|memo|text|begünstigter|auftraggeber/i.test(x))),
+    };
+    // Sparkasse/Deutsche Bank: Soll/Haben separate columns instead of single Betrag
+    _map.soll = String(hl.findIndex(x => /^soll$/i.test(x)));
+    _map.haben = String(hl.findIndex(x => /^haben$/i.test(x)));
     _step = 2; reImport();
   };
   reader.readAsText(f, 'UTF-8');
