@@ -49,12 +49,12 @@ export function delRec(id) {
   save(); render();
 }
 
-let _curType = 'expense';
+let _recCurType = 'expense';
 
 export function openRecForm(id = null) {
   const r = id ? S.recurring.find(x => x.id === id) : null;
-  _curType = r?.type || 'expense';
-  const type = _curType;
+  _recCurType = r?.type || 'expense';
+  const type = _recCurType;
   const html = `<div class="fgrid">
     <div class="tgl-row"><button type="button" class="tgl-btn ${type === 'expense' ? 'ae' : ''}" data-action="recTypeExpense">↑ Ausgabe</button><button type="button" class="tgl-btn ${type === 'income' ? 'ai' : ''}" data-action="recTypeIncome">↓ Einnahme</button></div>
     <div class="field"><label>Name</label><input type="text" id="rf-name" value="${esc(r?.name || '')}" placeholder="z.B. Miete, Gehalt"></div>
@@ -73,7 +73,7 @@ export function openRecForm(id = null) {
 }
 
 export function setRecType(type) {
-  _curType = type;
+  _recCurType = type;
   document.querySelector('[data-action="recTypeExpense"]').className = `tgl-btn ${type === 'expense' ? 'ae' : ''}`;
   document.querySelector('[data-action="recTypeIncome"]').className = `tgl-btn ${type === 'income' ? 'ai' : ''}`;
   const s = document.getElementById('rf-cat');
@@ -85,7 +85,7 @@ export function saveRec(eid) {
   const amt = parseFloat(document.getElementById('rf-amt')?.value || '0');
   if (!name || !amt) { notify('⚠ Name und Betrag eingeben'); return; }
   const existing = eid ? S.recurring.find(r => r.id === eid) : null;
-  const rule = { id: eid || uid(), name, amount: amt, type: _curType, category: document.getElementById('rf-cat')?.value, account: document.getElementById('rf-acc')?.value || 'girokonto', interval: document.getElementById('rf-iv')?.value || 'monthly', nextDate: document.getElementById('rf-nd')?.value || today(), active: existing ? existing.active : true };
+  const rule = { id: eid || uid(), name, amount: amt, type: _recCurType, category: document.getElementById('rf-cat')?.value, account: document.getElementById('rf-acc')?.value || 'girokonto', interval: document.getElementById('rf-iv')?.value || 'monthly', nextDate: document.getElementById('rf-nd')?.value || today(), active: existing ? existing.active : true };
   if (eid) { const i = S.recurring.findIndex(r => r.id === eid); if (i >= 0) S.recurring[i] = { ...S.recurring[i], ...rule }; }
   else S.recurring.push(rule);
   processRecurring(); save(); closeModal(); render(); notify('✅ Regel gespeichert');

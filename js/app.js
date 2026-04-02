@@ -9,7 +9,7 @@ import { openSplitForm, saveSplit, splitAddRow, splitDelRow, splitSetCat, splitS
 import { delTx, filterTx } from './views/transactions.js';
 import { openRecForm, saveRec, toggleRec, delRec, setRecType } from './views/recurring.js';
 import { setChartTab, setChartYear, _cyr } from './views/charts.js';
-import { csvLoad, csvImport, csvPreview, csvGoBack, csvGoBackToMap, csvRestart, csvMapCol } from './views/import.js';
+import { csvLoad, csvImport, csvPreview, csvGoBack, csvGoBackToMap, csvRestart, csvMapCol, pdfLoad, pdfImport } from './views/import.js';
 import { addBudget, delBudget, exportJ, exportCSV, importJ, openCatForm, saveCat, delCat, setCatType, selectCatColor, openAccForm, saveAcc, delAcc } from './views/settings.js';
 
 // ── INIT ──────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ const clickHandlers = {
   delAcc: (el) => delAcc(el.dataset.id),
   // CSV Import
   csvPrev: csvPreview, csvBack: csvGoBack, csvBackToMap: csvGoBackToMap,
-  csvImport, csvRestart,
+  csvImport, csvRestart, pdfImport,
 };
 
 document.addEventListener('click', e => {
@@ -72,6 +72,7 @@ const changeHandlers = {
   filterTx: () => filterTx(_month),
   txCurrencyChange,
   csvLoad: (el) => csvLoad(el),
+  pdfLoad: (el) => pdfLoad(el),
   importJ: (el) => importJ(el),
   csvMapCol: (el) => csvMapCol(el.dataset.col, el.value),
   batchField: (el) => batchSetField(parseInt(el.dataset.idx), el.dataset.field, el.value),
