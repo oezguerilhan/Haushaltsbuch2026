@@ -20,7 +20,7 @@ function csvPanel() {
   if (_step === 1) return `<div class="empty" style="padding:48px"><div class="ei">📂</div><div><b>Datei hochladen</b><div style="font-size:12px;color:var(--muted);margin-top:4px">CSV (Semikolon/Komma) oder PDF-Kontoauszug · UTF-8 · negative Beträge = Ausgaben</div></div>
     <div style="display:flex;gap:10px;margin-top:12px">
       <label class="btn btn-a" style="cursor:pointer">📊 CSV-Dateien<input type="file" accept=".csv,.txt" multiple style="display:none" data-onchange="csvLoad"></label>
-      <label class="btn btn-g" style="cursor:pointer">📄 PDF-Kontoauszug<input type="file" accept=".pdf" style="display:none" data-onchange="pdfLoad"></label>
+      <label class="btn btn-g" style="cursor:pointer">📄 PDF-Kontoauszüge<input type="file" accept=".pdf" multiple style="display:none" data-onchange="pdfLoad"></label>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:10px">PDF-Import: Trade Republic + andere Banken</div>
   </div>`;
@@ -128,17 +128,21 @@ export function csvLoad(inp) {
 }
 
 export async function pdfLoad(inp) {
-  const f = inp.files[0]; if (!f) return;
-  _rows = []; _pdfTxs = []; // clear CSV state
-  notify('⏳ PDF wird verarbeitet…');
+  if (!inp.files.length) return;
+  _rows = []; _pdfTxs = [];
+  const files = [...inp.files];
+  notify(`⏳ ${files.length > 1 ? files.length + ' PDFs werden' : 'PDF wird'} verarbeitet…`);
   try {
-    _pdfTxs = await parsePdfFile(f);
+    for (const f of files) {
+      const txs = await parsePdfFile(f);
+      _pdfTxs.push(...txs);
+    }
     if (!_pdfTxs.length) {
-      notify('⚠ Keine Transaktionen im PDF erkannt');
+      notify('⚠ Keine Transaktionen erkannt');
       return;
     }
     _step = 3; reImport();
-    notify(`📄 ${_pdfTxs.length} Transaktionen erkannt`);
+    notify(`📄 ${files.length > 1 ? files.length + ' PDFs · ' : ''}${_pdfTxs.length} Transaktionen erkannt`);
   } catch (e) {
     notify('❌ PDF-Fehler: ' + (e.message || 'Unbekannter Fehler'));
   }
