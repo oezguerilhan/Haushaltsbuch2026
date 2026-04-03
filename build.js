@@ -6,35 +6,35 @@
  * that works over file:// protocol (no HTTP server needed).
  *
  * Usage: node build.js
- * Output: dist/haushaltsbuch.html (+ sw.js, manifest.json, icon.svg)
+ * Output: ./haushaltsbuch.html (bundled single-file)
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
-const DIST = path.join(ROOT, 'dist');
+const SRC = path.join(ROOT, 'src');
 
 // Topologically sorted module order (dependencies come first)
 const MODULE_ORDER = [
-  'js/constants.js',
-  'js/db.js',
-  'js/charts.js',
-  'js/modal.js',
-  'js/utils.js',
-  'js/state.js',
-  'js/pdfParser.js',
-  'js/views/dashboard.js',
-  'js/views/transactions.js',
-  'js/views/recurring.js',
-  'js/views/charts.js',
-  'js/views/import.js',
-  'js/views/settings.js',
-  'js/forms/transaction.js',
-  'js/forms/batch.js',
-  'js/forms/split.js',
-  'js/router.js',
-  'js/app.js',
+  'src/js/constants.js',
+  'src/js/db.js',
+  'src/js/charts.js',
+  'src/js/modal.js',
+  'src/js/utils.js',
+  'src/js/state.js',
+  'src/js/pdfParser.js',
+  'src/js/views/dashboard.js',
+  'src/js/views/transactions.js',
+  'src/js/views/recurring.js',
+  'src/js/views/charts.js',
+  'src/js/views/import.js',
+  'src/js/views/settings.js',
+  'src/js/forms/transaction.js',
+  'src/js/forms/batch.js',
+  'src/js/forms/split.js',
+  'src/js/router.js',
+  'src/js/app.js',
 ];
 
 function stripImportsExports(code) {
@@ -56,11 +56,8 @@ function stripImportsExports(code) {
     .trim();
 }
 
-// Create dist directory
-if (!fs.existsSync(DIST)) fs.mkdirSync(DIST, { recursive: true });
-
-// Read HTML template
-let html = fs.readFileSync(path.join(ROOT, 'haushaltsbuch.html'), 'utf-8');
+// Read HTML template from src/
+let html = fs.readFileSync(path.join(SRC, 'haushaltsbuch.html'), 'utf-8');
 
 // Bundle all JS modules
 // Modules whose exports are only consumed internally (not by app.js event handlers)
@@ -69,8 +66,8 @@ let html = fs.readFileSync(path.join(ROOT, 'haushaltsbuch.html'), 'utf-8');
 // These modules stay in global scope (no IIFE wrapping).
 // All others get IIFE-wrapped, with exported functions assigned to global vars.
 const GLOBAL_SCOPE = new Set([
-  'js/constants.js', 'js/db.js', 'js/charts.js', 'js/modal.js',
-  'js/utils.js', 'js/state.js', 'js/router.js', 'js/app.js',
+  'src/js/constants.js', 'js/db.js', 'js/charts.js', 'js/modal.js',
+  'src/js/utils.js', 'js/state.js', 'js/router.js', 'js/app.js',
 ]);
 
 const jsChunks = MODULE_ORDER.map(modPath => {
@@ -126,53 +123,12 @@ if (idx >= 0) {
   process.exit(1);
 }
 
-// Write bundled HTML
-fs.writeFileSync(path.join(DIST, 'haushaltsbuch.html'), html, 'utf-8');
-
-// Copy static assets
-for (const file of ['manifest.json', 'icon.svg']) {
-  const src = path.join(ROOT, file);
-  if (fs.existsSync(src)) fs.copyFileSync(src, path.join(DIST, file));
-}
-
-// Write simplified service worker for dist (single-file)
-const sw = `// Haushaltsbuch 2026 — Service Worker (bundled)
-'use strict';
-const CACHE_NAME = 'hb2026-v4';
-const APP_SHELL = ['./haushaltsbuch.html', './manifest.json', './icon.svg'];
-
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))));
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.protocol === 'chrome-extension:' || url.origin !== self.location.origin) return;
-  const isShell = APP_SHELL.some(f => event.request.url.endsWith(f.replace('./', '/')));
-  if (isShell || url.pathname === '/' || url.pathname.endsWith('haushaltsbuch.html')) {
-    event.respondWith(caches.match(event.request).then(cached => {
-      const network = fetch(event.request).then(res => { if (res.ok) { const clone = res.clone(); caches.open(CACHE_NAME).then(c => c.put(event.request, clone)); } return res; }).catch(() => cached);
-      return cached || network;
-    }));
-    return;
-  }
-  event.respondWith(fetch(event.request).then(res => { if (res.ok) { const clone = res.clone(); caches.open(CACHE_NAME).then(c => c.put(event.request, clone)); } return res; }).catch(() => caches.match(event.request)));
-});
-`;
-fs.writeFileSync(path.join(DIST, 'sw.js'), sw, 'utf-8');
+// Write bundled HTML to root
+fs.writeFileSync(path.join(ROOT, 'haushaltsbuch.html'), html, 'utf-8');
 
 // Summary
-const htmlSize = fs.statSync(path.join(DIST, 'haushaltsbuch.html')).size;
+const htmlSize = fs.statSync(path.join(ROOT, 'haushaltsbuch.html')).size;
 console.log('Build complete!');
-console.log(`  dist/haushaltsbuch.html  (${(htmlSize / 1024).toFixed(1)} KB)`);
-console.log('  dist/sw.js');
-console.log('  dist/manifest.json');
-console.log('  dist/icon.svg');
+console.log(`  haushaltsbuch.html  (${(htmlSize / 1024).toFixed(1)} KB)`);
 console.log('');
-console.log('Open dist/haushaltsbuch.html directly in your browser (file:// works!)');
+console.log('Open haushaltsbuch.html directly in your browser (Doppelklick!)');
