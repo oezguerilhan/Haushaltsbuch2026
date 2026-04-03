@@ -21,7 +21,7 @@ function getPdfLib() {
       s.src = src;
       s.onload = () => {
         if (typeof window.pdfjsLib !== 'undefined') {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.js';
           resolve(window.pdfjsLib);
         } else if (fallback) { tryLoad(fallback, null); }
         else { reject(new Error('PDF.js geladen, aber pdfjsLib nicht verfügbar')); }
