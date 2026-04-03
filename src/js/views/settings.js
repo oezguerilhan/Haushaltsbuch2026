@@ -1,9 +1,10 @@
 'use strict';
 
-import { S, save, getCat, allCats, getAccs, getAcc } from '../state.js';
+import { S, INIT, save, getCat, allCats, getAccs, getAcc } from '../state.js';
 import { CATS, CAT_COLORS } from '../constants.js';
 import { fmt, fmtD, esc, uid, today } from '../utils.js';
 import { openModal, closeModal, notify } from '../modal.js';
+import { _month, render } from '../router.js';
 import { render } from '../router.js';
 
 export function vSettings() {
@@ -63,6 +64,10 @@ export function vSettings() {
       <button class="btn btn-g" data-action="exportCSV">📊 CSV exportieren</button>
       <label class="btn btn-g" style="cursor:pointer">📥 JSON importieren<input type="file" accept=".json" style="display:none" data-onchange="importJ"></label>
       <button class="btn btn-g" data-action="printPage">🖨 Drucken / PDF</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <button class="btn btn-d" data-action="deleteMonth">🗑 Monat löschen</button>
+      <button class="btn btn-d" data-action="deleteAll">⚠ Alle Daten löschen</button>
     </div>
   </div>`;
 }
@@ -211,4 +216,20 @@ export function delAcc(id) {
   if (!S.accounts?.length) S.accounts = [...getAccs()];
   S.accounts = S.accounts.filter(a => a.id !== id);
   save(); render(); notify('🗑 Konto gelöscht');
+}
+
+// Data deletion
+export function deleteMonth() {
+  const count = S.transactions.filter(t => t.date.startsWith(_month)).length;
+  if (!count) { notify('⚠ Keine Buchungen in diesem Monat'); return; }
+  if (!confirm(`${count} Buchungen im aktuellen Monat löschen?`)) return;
+  S.transactions = S.transactions.filter(t => !t.date.startsWith(_month));
+  save(); render(); notify(`🗑 ${count} Buchungen gelöscht`);
+}
+
+export function deleteAll() {
+  if (!S.transactions.length) { notify('⚠ Keine Daten vorhanden'); return; }
+  if (!confirm(`ALLE ${S.transactions.length} Buchungen, ${S.recurring.length} Regeln und ${S.budgets.length} Budgets löschen?`)) return;
+  S.transactions = []; S.recurring = []; S.budgets = [];
+  save(); render(); notify('🗑 Alle Daten gelöscht');
 }

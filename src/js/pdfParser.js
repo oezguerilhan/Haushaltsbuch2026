@@ -410,6 +410,127 @@ function parseDeutscheBank(items) {
 }
 
 /**
+ * Parse Deutsche Bank Online-Banking PDF (Kontoumsätze export).
+ * Full dates DD.MM.YYYY, amounts on separate lines, no +/- for Haben.
+ * Pattern: Date line → Date line (Wertstellung) → Umsatzart → Amount → EUR → Description lines
+ */
+function parseDeutscheBankOnline(items) {
+  const transactions = [];
+
+  // Group into text lines by Y position
+  items.sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x);
+  const rows = [];
+  let currentRow = [], lastY = null;
+  for (const item of items) {
+    if (lastY !== null && Math.abs(item.y - lastY) > 3) {
+      if (currentRow.length) rows.push({ y: lastY, items: [...currentRow] });
+      currentRow = [];
+    }
+    currentRow.push(item);
+    lastY = item.y;
+  }
+  if (currentRow.length) rows.push({ y: lastY, items: currentRow });
+
+  const fullDateRe = /^(\d{2}\.\d{2}\.\d{4})$/;
+  const signedAmtRe = /^(-\d{1,3}(?:\.\d{3})*,\d{2})$/;
+  const bareAmtRe = /^(\d{1,3}(?:\.\d{3})*,\d{2})$/;
+  const skipRe = /^Kundennummer|^Gebuchte|^Zeitraum|^Konto \(|^Kontostand|^von \d|^DE\d{2}\s|^Buchung|^Wertstellung|^Umsatz|^Soll|^Haben|^Währung|^\d+.*EUR$/i;
+
+  let i = 0;
+  while (i < rows.length) {
+    const rowText = rows[i].items.map(it => it.text).join(' ');
+    if (skipRe.test(rowText) || /^\s*$/.test(rowText) || rowText.length < 3) { i++; continue; }
+
+    // Look for a full date DD.MM.YYYY
+    const firstText = rows[i].items[0]?.text;
+    if (!firstText || !fullDateRe.test(firstText)) { i++; continue; }
+
+    const dateStr = firstText;
+
+    // Next row should also be a date (Wertstellung) — skip it
+    let extraIdx = i + 1;
+    if (extraIdx < rows.length && fullDateRe.test(rows[extraIdx].items[0]?.text || '')) {
+      extraIdx++;
+    }
+
+    // Collect: umsatzart, amount, description from following rows until next date
+    let amount = 0, type = 'expense';
+    const descParts = [];
+    let foundAmount = false;
+
+    while (extraIdx < rows.length) {
+      const nextItems = rows[extraIdx].items;
+      const nextText = nextItems.map(it => it.text).join(' ').trim();
+
+      // Stop at next date (next transaction)
+      if (fullDateRe.test(nextItems[0]?.text || '')) break;
+      // Stop at page headers
+      if (skipRe.test(nextText)) break;
+
+      // Check for amounts
+      if (!foundAmount) {
+        for (const it of nextItems) {
+          const sm = it.text.match(signedAmtRe);
+          if (sm) {
+            amount = Math.abs(parseFloat(sm[1].replace(/\./g, '').replace(',', '.')));
+            type = 'expense';
+            foundAmount = true;
+            break;
+          }
+          const bm = it.text.match(bareAmtRe);
+          if (bm && !/EUR|Soll|Haben/.test(nextText) && !fullDateRe.test(it.text)) {
+            amount = parseFloat(bm[1].replace(/\./g, '').replace(',', '.'));
+            type = 'income';
+            foundAmount = true;
+            break;
+          }
+        }
+        if (foundAmount) { extraIdx++; continue; }
+      }
+
+      // Skip EUR, Gläubiger-ID, Mandatsreferenz lines
+      if (/^EUR$|^Gläubiger|^Mand|^RCUR|^OTHR|^FRST|^Kundenreferenz|^IBAN|^BIC\s/i.test(nextText)) { extraIdx++; continue; }
+
+      // Collect description (Umsatzart, Begünstigter, Verwendungszweck)
+      if (!/^Verwendungszweck\b/i.test(nextText) && !/^Begünstigter/i.test(nextText)) {
+        descParts.push(nextText);
+      } else {
+        // Extract value after "Begünstigter/Auftraggeber "
+        const payeeMatch = nextText.match(/^Begünstigter\/Auftraggeber\s+(.+)/i);
+        if (payeeMatch) descParts.unshift(payeeMatch[1]); // Put payee first
+        else {
+          const vzMatch = nextText.match(/^Verwendungszweck\s+(.+)/i);
+          if (vzMatch) descParts.push(vzMatch[1]);
+        }
+      }
+
+      extraIdx++;
+    }
+
+    if (amount > 0) {
+      const desc = descParts.join(' ').trim().slice(0, 80) || 'Transaktion';
+      transactions.push({
+        id: uid(),
+        date: parseDeDate(dateStr),
+        amount,
+        type,
+        description: desc,
+        category: guessCategory(desc) || (type === 'income' ? 'sonstiges_e' : 'sonstiges_a'),
+        account: 'girokonto',
+        tags: [],
+        source: 'import',
+        createdAt: Date.now(),
+        note: 'PDF-Import (Deutsche Bank Online)',
+      });
+    }
+
+    i = extraIdx;
+  }
+
+  return transactions;
+}
+
+/**
  * Generic bank statement parser fallback
  */
 function parseGenericBank(items) {
@@ -470,8 +591,12 @@ async function parsePdfFile(file) {
   const isDeutscheBank = /Deutsche Bank AG|Deutsche Bank$|Gebuchte Umsätze.*AktivKonto/im.test(fullText);
   const isTradeRepublic = !isDeutscheBank && /trade\s*republic|TRBKDEBBXXX/i.test(fullText);
 
+  // Detect sub-format: formal Kontoauszug (DD.MM. + YYYY split) vs online export (DD.MM.YYYY full)
+  const isOnlineExport = isDeutscheBank && /AktivKonto|Gebuchte Umsätze/i.test(fullText);
+
   let txs;
-  if (isDeutscheBank) txs = parseDeutscheBank(items);
+  if (isDeutscheBank && isOnlineExport) txs = parseDeutscheBankOnline(items);
+  else if (isDeutscheBank) txs = parseDeutscheBank(items);
   else if (isTradeRepublic) txs = parseTradeRepublic(items);
   else txs = parseGenericBank(items);
 

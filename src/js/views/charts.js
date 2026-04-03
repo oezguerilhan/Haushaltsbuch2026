@@ -80,7 +80,7 @@ export function vCharts(month) {
     <div class="head-actions">
       ${_ctab === 'year' || _ctab === 'compare' || _ctab === 'topexp' ? `<div class="mth-nav"><button data-action="chartYearPrev">‹</button><span style="min-width:50px">${_cyr}</span><button data-action="chartYearNext">›</button></div>` : _ctab === 'month' ? mthNav() : ''}
       <button class="btn btn-g btn-sm" data-action="printPage" title="Drucken">🖨 Drucken</button>
-      <div style="display:flex;gap:3px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:3px;flex-wrap:wrap">
+      <div style="display:flex;gap:3px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:3px;overflow-x:auto">
         ${tabs.map(([v, l]) => `<button data-action="setChartTab" data-tab="${v}" class="btn btn-sm" style="${_ctab === v ? 'background:var(--accent);color:#0f0d0b' : 'background:none;color:var(--muted);font-weight:400'}">${l}</button>`).join('')}
       </div>
     </div>

@@ -10,7 +10,7 @@ import { delTx, filterTx } from './views/transactions.js';
 import { openRecForm, saveRec, toggleRec, delRec, setRecType } from './views/recurring.js';
 import { setChartTab, setChartYear, _cyr } from './views/charts.js';
 import { csvLoad, csvImport, csvPreview, csvGoBack, csvGoBackToMap, csvRestart, csvMapCol, pdfLoad, pdfImport } from './views/import.js';
-import { addBudget, delBudget, exportJ, exportCSV, importJ, openCatForm, saveCat, delCat, setCatType, selectCatColor, openAccForm, saveAcc, delAcc } from './views/settings.js';
+import { addBudget, delBudget, exportJ, exportCSV, importJ, openCatForm, saveCat, delCat, setCatType, selectCatColor, openAccForm, saveAcc, delAcc, deleteMonth, deleteAll } from './views/settings.js';
 
 // ── INIT ──────────────────────────────────────────────────────────
 initModal();
@@ -54,6 +54,7 @@ const clickHandlers = {
   openAccForm: (el) => openAccForm(el.dataset.id || null),
   saveAcc: (el) => saveAcc(el.dataset.id || ''),
   delAcc: (el) => delAcc(el.dataset.id),
+  deleteMonth, deleteAll,
   // CSV Import
   csvPrev: csvPreview, csvBack: csvGoBack, csvBackToMap: csvGoBackToMap,
   csvImport, csvRestart, pdfImport,
