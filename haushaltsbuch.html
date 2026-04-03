@@ -908,7 +908,7 @@ function parseDeutscheBankOnline(items) {
   const fullDateRe = /^(\d{2}\.\d{2}\.\d{4})$/;
   const signedAmtRe = /^(-\d{1,3}(?:\.\d{3})*,\d{2})$/;
   const bareAmtRe = /^(\d{1,3}(?:\.\d{3})*,\d{2})$/;
-  const skipRe = /^Kundennummer|^Gebuchte|^Zeitraum|^Konto \(|^Kontostand|^von \d|^DE\d{2}\s|^Buchung|^Wertstellung|^Umsatz|^Soll|^Haben|^Währung|^\d+.*EUR$/i;
+  const skipRe = /^Kundennummer|^Gebuchte|^Zeitraum|^Konto \(|^Kontostand|^von \d|^DE\d{2}\s|^Buchung\b|^Wertstellung|^Umsatz\b|^Soll\b|^Haben\b|^Währung/i;
 
   let i = 0;
   while (i < rows.length) {
@@ -931,6 +931,23 @@ function parseDeutscheBankOnline(items) {
     let amount = 0, type = 'expense';
     const descParts = [];
     let foundAmount = false;
+
+    // Check the date row itself for amounts (online format has everything on one line)
+    for (const it of rows[i].items) {
+      if (foundAmount) break;
+      const sm = it.text.match(signedAmtRe);
+      if (sm) { amount = Math.abs(parseFloat(sm[1].replace(/\./g, '').replace(',', '.'))); type = 'expense'; foundAmount = true; }
+      else {
+        const bm = it.text.match(bareAmtRe);
+        if (bm && !fullDateRe.test(it.text)) { amount = parseFloat(bm[1].replace(/\./g, '').replace(',', '.')); type = 'income'; foundAmount = true; }
+      }
+    }
+    // Also collect description from the date row (e.g. "SEP A Lastschrift")
+    for (const it of rows[i].items) {
+      if (!fullDateRe.test(it.text) && !signedAmtRe.test(it.text) && !bareAmtRe.test(it.text) && it.text !== 'EUR' && it.text !== '-') {
+        descParts.push(it.text);
+      }
+    }
 
     while (extraIdx < rows.length) {
       const nextItems = rows[extraIdx].items;
