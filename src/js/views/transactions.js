@@ -22,7 +22,7 @@ export function txRow(t, showAct = true) {
 
 export function buildTxList(txs) {
   if (!txs.length) return '<div class="empty"><div class="ei">📋</div>Keine Buchungen</div>';
-  return [...txs].sort((a, b) => b.date.localeCompare(a.date)).map(t => txRow(t)).join('');
+  return [...txs].sort((a, b) => a.date.localeCompare(b.date)).map(t => txRow(t)).join('');
 }
 
 export function vTx(month) {
