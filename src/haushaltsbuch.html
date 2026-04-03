@@ -117,10 +117,18 @@ select option{background:var(--card)}
 #fab{position:fixed;right:28px;bottom:28px;width:52px;height:52px;border-radius:50%;background:var(--accent);border:none;color:#0f0d0b;font-size:26px;line-height:1;cursor:pointer;box-shadow:0 4px 20px rgba(232,160,32,.4);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .15s;font-family:inherit}
 #fab:hover{transform:scale(1.08)}
 
-.mth-nav{display:flex;align-items:center;gap:8px}
-.mth-nav span{font-family:Georgia,serif;font-size:14px;font-weight:600;min-width:120px;text-align:center}
+.mth-nav{display:flex;align-items:center;gap:8px;position:relative}
+.mth-nav span{font-family:Georgia,serif;font-size:14px;font-weight:600;min-width:120px;text-align:center;cursor:pointer;padding:4px 8px;border-radius:8px;transition:background .15s}
+.mth-nav span:hover{background:var(--card2)}
 .mth-nav button{background:var(--card);border:1px solid var(--border);color:var(--muted);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .mth-nav button:hover{background:var(--card2)}
+.mth-picker{position:absolute;top:100%;right:0;margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px;z-index:60;min-width:240px;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.mth-picker-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.mth-picker-hdr span{font-family:Georgia,serif;font-size:15px;font-weight:700;min-width:60px;text-align:center}
+.mth-picker-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.mth-picker-grid button{padding:8px 4px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--txt2);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .15s}
+.mth-picker-grid button:hover{background:var(--card2);color:var(--txt)}
+.mth-picker-grid button.active{background:var(--accent);color:#000;font-weight:700;border-color:var(--accent)}
 
 .sec-ttl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px}
 

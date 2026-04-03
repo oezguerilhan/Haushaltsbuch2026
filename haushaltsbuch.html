@@ -117,10 +117,18 @@ select option{background:var(--card)}
 #fab{position:fixed;right:28px;bottom:28px;width:52px;height:52px;border-radius:50%;background:var(--accent);border:none;color:#0f0d0b;font-size:26px;line-height:1;cursor:pointer;box-shadow:0 4px 20px rgba(232,160,32,.4);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .15s;font-family:inherit}
 #fab:hover{transform:scale(1.08)}
 
-.mth-nav{display:flex;align-items:center;gap:8px}
-.mth-nav span{font-family:Georgia,serif;font-size:14px;font-weight:600;min-width:120px;text-align:center}
+.mth-nav{display:flex;align-items:center;gap:8px;position:relative}
+.mth-nav span{font-family:Georgia,serif;font-size:14px;font-weight:600;min-width:120px;text-align:center;cursor:pointer;padding:4px 8px;border-radius:8px;transition:background .15s}
+.mth-nav span:hover{background:var(--card2)}
 .mth-nav button{background:var(--card);border:1px solid var(--border);color:var(--muted);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .mth-nav button:hover{background:var(--card2)}
+.mth-picker{position:absolute;top:100%;right:0;margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px;z-index:60;min-width:240px;box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.mth-picker-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.mth-picker-hdr span{font-family:Georgia,serif;font-size:15px;font-weight:700;min-width:60px;text-align:center}
+.mth-picker-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.mth-picker-grid button{padding:8px 4px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--txt2);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .15s}
+.mth-picker-grid button:hover{background:var(--card2);color:var(--txt)}
+.mth-picker-grid button.active{background:var(--accent);color:#000;font-weight:700;border-color:var(--accent)}
 
 .sec-ttl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px}
 
@@ -1350,7 +1358,6 @@ function pdfImport() {
   S.transactions.push(...news);
   _csvCnt = news.length;
   _pdfTxs = [];
-  if (news.length) { const latest = news.sort((a, b) => b.date.localeCompare(a.date))[0]; setMonth(latest.date.slice(0, 7)); }
   save(); _step = 4; reImport();
   notify(`✅ ${news.length} Buchungen importiert`);
 }
@@ -1365,7 +1372,6 @@ function csvImport() {
   const news = all.filter(t => !keys.has(`${t.date}|${t.amount}|${t.description}`));
   S.transactions.push(...news);
   _csvCnt = news.length;
-  if (news.length) { const latest = news.sort((a, b) => b.date.localeCompare(a.date))[0]; setMonth(latest.date.slice(0, 7)); }
   save(); _step = 4; reImport();
   notify(`✅ ${news.length} Buchungen importiert`);
 }
@@ -1803,6 +1809,7 @@ window.saveSplit = saveSplit;
 // ── src/js/router.js ────────────────────────────────────────
 let _view = 'dash';
 let _month = curYM();
+let _pickerYear = null; // year shown in the month picker
 function navigate(v) {
   _view = v;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
@@ -1836,7 +1843,70 @@ function nextMonth() {
 function setMonth(m) { _month = m; }
 function mthNav() {
   const [y, m] = _month.split('-').map(Number);
-  return `<div class="mth-nav"><button data-action="prevMonth">‹</button><span>${MONTHS_L[m - 1]} ${y}</span><button data-action="nextMonth">›</button></div>`;
+  return `<div class="mth-nav"><button data-action="prevMonth">‹</button><span data-action="openMonthPicker">${MONTHS_L[m - 1]} ${y}</span><button data-action="nextMonth">›</button></div>`;
+}
+
+// Month Picker
+function openMonthPicker() {
+  // Close if already open
+  const existing = document.querySelector('.mth-picker');
+  if (existing) { existing.remove(); return; }
+
+  const [y] = _month.split('-').map(Number);
+  _pickerYear = y;
+  renderPicker();
+}
+
+function renderPicker() {
+  // Remove old picker
+  const old = document.querySelector('.mth-picker');
+  if (old) old.remove();
+
+  const [, curM] = _month.split('-').map(Number);
+  const nav = document.querySelector('.mth-nav');
+  if (!nav) return;
+
+  const html = `<div class="mth-picker">
+    <div class="mth-picker-hdr">
+      <button data-action="pickerPrevYear" class="btn btn-g btn-ic btn-sm">‹</button>
+      <span>${_pickerYear}</span>
+      <button data-action="pickerNextYear" class="btn btn-g btn-ic btn-sm">›</button>
+    </div>
+    <div class="mth-picker-grid">
+      ${MONTHS_S.map((name, i) => {
+        const isActive = _pickerYear === parseInt(_month.split('-')[0]) && (i + 1) === curM;
+        return `<button data-action="pickMonth" data-ym="${_pickerYear}-${_pad2(i + 1)}" class="${isActive ? 'active' : ''}">${name}</button>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  nav.insertAdjacentHTML('beforeend', html);
+
+  // Close picker on outside click (delayed to avoid immediate close)
+  setTimeout(() => {
+    const handler = (e) => {
+      if (!e.target.closest('.mth-picker') && !e.target.closest('[data-action="openMonthPicker"]')) {
+        const p = document.querySelector('.mth-picker');
+        if (p) p.remove();
+        document.removeEventListener('click', handler);
+      }
+    };
+    document.addEventListener('click', handler);
+  }, 10);
+}
+function pickerPrevYear() {
+  _pickerYear--;
+  renderPicker();
+}
+function pickerNextYear() {
+  _pickerYear++;
+  renderPicker();
+}
+function pickMonth(ym) {
+  _month = ym;
+  const p = document.querySelector('.mth-picker');
+  if (p) p.remove();
+  render();
 }
 
 // ── src/js/app.js ───────────────────────────────────────────
@@ -1849,6 +1919,8 @@ document.getElementById('fab').onclick = () => openTxForm();
 const clickHandlers = {
   // Navigation
   prevMonth, nextMonth, closeModal, printPage: () => window.print(),
+  openMonthPicker, pickerPrevYear, pickerNextYear,
+  pickMonth: (el) => pickMonth(el.dataset.ym),
   // Transactions
   openTxForm: () => openTxForm(), saveTx: (el) => saveTx(el.dataset.id || ''),
   editTx: (el) => editTx(el.dataset.id), delTx: (el) => delTx(el.dataset.id),

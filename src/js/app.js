@@ -1,7 +1,7 @@
 'use strict';
 
 import { loadState } from './state.js';
-import { navigate, render, prevMonth, nextMonth, _month } from './router.js';
+import { navigate, render, prevMonth, nextMonth, _month, openMonthPicker, pickerPrevYear, pickerNextYear, pickMonth } from './router.js';
 import { initModal, closeModal } from './modal.js';
 import { openTxForm, saveTx, editTx, setTxType, txCurrencyChange } from './forms/transaction.js';
 import { openBatch, saveBatch, batchAddRow, batchDelRow, batchSetField, batchSetType } from './forms/batch.js';
@@ -21,6 +21,8 @@ document.getElementById('fab').onclick = () => openTxForm();
 const clickHandlers = {
   // Navigation
   prevMonth, nextMonth, closeModal, printPage: () => window.print(),
+  openMonthPicker, pickerPrevYear, pickerNextYear,
+  pickMonth: (el) => pickMonth(el.dataset.ym),
   // Transactions
   openTxForm: () => openTxForm(), saveTx: (el) => saveTx(el.dataset.id || ''),
   editTx: (el) => editTx(el.dataset.id), delTx: (el) => delTx(el.dataset.id),

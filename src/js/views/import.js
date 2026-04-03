@@ -3,7 +3,6 @@
 import { S, save, getCat } from '../state.js';
 import { fmt, fmtD, esc, uid, today, parseDeDate, guessCategory } from '../utils.js';
 import { notify } from '../modal.js';
-import { setMonth } from '../router.js';
 import { parsePdfFile } from '../pdfParser.js';
 
 let _step = 1, _rows = [], _hdr = [], _map = { date: '-1', amount: '-1', desc: '-1' };
@@ -155,7 +154,6 @@ export function pdfImport() {
   S.transactions.push(...news);
   _csvCnt = news.length;
   _pdfTxs = [];
-  if (news.length) { const latest = news.sort((a, b) => b.date.localeCompare(a.date))[0]; setMonth(latest.date.slice(0, 7)); }
   save(); _step = 4; reImport();
   notify(`✅ ${news.length} Buchungen importiert`);
 }
@@ -172,7 +170,6 @@ export function csvImport() {
   const news = all.filter(t => !keys.has(`${t.date}|${t.amount}|${t.description}`));
   S.transactions.push(...news);
   _csvCnt = news.length;
-  if (news.length) { const latest = news.sort((a, b) => b.date.localeCompare(a.date))[0]; setMonth(latest.date.slice(0, 7)); }
   save(); _step = 4; reImport();
   notify(`✅ ${news.length} Buchungen importiert`);
 }

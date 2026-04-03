@@ -1,7 +1,7 @@
 'use strict';
 
 import { curYM, _pad2 } from './utils.js';
-import { MONTHS_L } from './constants.js';
+import { MONTHS_S, MONTHS_L } from './constants.js';
 import { vDash } from './views/dashboard.js';
 import { vTx } from './views/transactions.js';
 import { vRec } from './views/recurring.js';
@@ -11,6 +11,7 @@ import { vSettings } from './views/settings.js';
 
 export let _view = 'dash';
 export let _month = curYM();
+let _pickerYear = null; // year shown in the month picker
 
 export function navigate(v) {
   _view = v;
@@ -50,5 +51,71 @@ export function setMonth(m) { _month = m; }
 
 export function mthNav() {
   const [y, m] = _month.split('-').map(Number);
-  return `<div class="mth-nav"><button data-action="prevMonth">‹</button><span>${MONTHS_L[m - 1]} ${y}</span><button data-action="nextMonth">›</button></div>`;
+  return `<div class="mth-nav"><button data-action="prevMonth">‹</button><span data-action="openMonthPicker">${MONTHS_L[m - 1]} ${y}</span><button data-action="nextMonth">›</button></div>`;
+}
+
+// Month Picker
+export function openMonthPicker() {
+  // Close if already open
+  const existing = document.querySelector('.mth-picker');
+  if (existing) { existing.remove(); return; }
+
+  const [y] = _month.split('-').map(Number);
+  _pickerYear = y;
+  renderPicker();
+}
+
+function renderPicker() {
+  // Remove old picker
+  const old = document.querySelector('.mth-picker');
+  if (old) old.remove();
+
+  const [, curM] = _month.split('-').map(Number);
+  const nav = document.querySelector('.mth-nav');
+  if (!nav) return;
+
+  const html = `<div class="mth-picker">
+    <div class="mth-picker-hdr">
+      <button data-action="pickerPrevYear" class="btn btn-g btn-ic btn-sm">‹</button>
+      <span>${_pickerYear}</span>
+      <button data-action="pickerNextYear" class="btn btn-g btn-ic btn-sm">›</button>
+    </div>
+    <div class="mth-picker-grid">
+      ${MONTHS_S.map((name, i) => {
+        const isActive = _pickerYear === parseInt(_month.split('-')[0]) && (i + 1) === curM;
+        return `<button data-action="pickMonth" data-ym="${_pickerYear}-${_pad2(i + 1)}" class="${isActive ? 'active' : ''}">${name}</button>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  nav.insertAdjacentHTML('beforeend', html);
+
+  // Close picker on outside click (delayed to avoid immediate close)
+  setTimeout(() => {
+    const handler = (e) => {
+      if (!e.target.closest('.mth-picker') && !e.target.closest('[data-action="openMonthPicker"]')) {
+        const p = document.querySelector('.mth-picker');
+        if (p) p.remove();
+        document.removeEventListener('click', handler);
+      }
+    };
+    document.addEventListener('click', handler);
+  }, 10);
+}
+
+export function pickerPrevYear() {
+  _pickerYear--;
+  renderPicker();
+}
+
+export function pickerNextYear() {
+  _pickerYear++;
+  renderPicker();
+}
+
+export function pickMonth(ym) {
+  _month = ym;
+  const p = document.querySelector('.mth-picker');
+  if (p) p.remove();
+  render();
 }
