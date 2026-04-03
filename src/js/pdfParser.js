@@ -446,12 +446,13 @@ function parseGenericBank(items) {
 async function parsePdfFile(file) {
   const items = await extractPdfItems(file);
   const fullText = items.map(i => i.text).join(' ');
-  const isTradeRepublic = /trade\s*republic|TRBKDEBBXXX/i.test(fullText);
-  const isDeutscheBank = /Deutsche Bank AG|DE74\s*3607\s*0024/i.test(fullText);
+  // Check Deutsche Bank FIRST — its PDFs may contain Trade Republic BIC in transactions
+  const isDeutscheBank = /Deutsche Bank AG/i.test(fullText);
+  const isTradeRepublic = !isDeutscheBank && /trade\s*republic|TRBKDEBBXXX/i.test(fullText);
 
   let txs;
-  if (isTradeRepublic) txs = parseTradeRepublic(items);
-  else if (isDeutscheBank) txs = parseDeutscheBank(items);
+  if (isDeutscheBank) txs = parseDeutscheBank(items);
+  else if (isTradeRepublic) txs = parseTradeRepublic(items);
   else txs = parseGenericBank(items);
 
   // Deduplicate

@@ -67,7 +67,7 @@ let html = fs.readFileSync(path.join(SRC, 'haushaltsbuch.html'), 'utf-8');
 // All others get IIFE-wrapped, with exported functions assigned to global vars.
 const GLOBAL_SCOPE = new Set([
   'src/js/constants.js', 'src/js/db.js', 'src/js/charts.js', 'src/js/modal.js',
-  'src/js/utils.js', 'src/js/state.js', 'src/js/router.js', 'src/js/app.js',
+  'src/js/utils.js', 'src/js/state.js', 'src/js/pdfParser.js', 'src/js/router.js', 'src/js/app.js',
 ]);
 
 const jsChunks = MODULE_ORDER.map(modPath => {
