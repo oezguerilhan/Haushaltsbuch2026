@@ -259,7 +259,7 @@ const CAT_COLORS = [
 ];
 
 // ── src/js/db.js ────────────────────────────────────────────
-(function(){let _db = null;
+let _db = null;
 let _useLocalStorage = false;
 function openDB() {
   if (_db) return Promise.resolve(_db);
@@ -305,13 +305,9 @@ async function dbSet(k, v) {
     } catch { _useLocalStorage = true; dbSet(k, v).then(res); }
   });
 }
-window.openDB = openDB;
-window.dbGet = dbGet;
-window.dbSet = dbSet;
-})();
 
 // ── src/js/charts.js ────────────────────────────────────────
-(function(){function svgGrouped(data, { h = 220, keys = [], colors = [], lkey = 'label' } = {}) {
+function svgGrouped(data, { h = 220, keys = [], colors = [], lkey = 'label' } = {}) {
   if (!data.length || !keys.length) return noData();
   const max = Math.max(...data.flatMap(d => keys.map(k => d[k] || 0)), 1);
   const pL = 48, pB = 28, pT = 14, pR = 8, bw = 14, bg = 4, gg = 10;
@@ -356,16 +352,9 @@ function noData() {
 function legend(items) {
   return `<div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px">${items.map(i => `<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><span class="cdot" style="background:${i.color}"></span>${i.label}</div>`).join('')}</div>`;
 }
-window.svgGrouped = svgGrouped;
-window.svgBars = svgBars;
-window.svgDonut = svgDonut;
-window.svgLine = svgLine;
-window.noData = noData;
-window.legend = legend;
-})();
 
 // ── src/js/modal.js ─────────────────────────────────────────
-(function(){function openModal(title, html, wide = false) {
+function openModal(title, html, wide = false) {
   document.getElementById('m-title').textContent = title;
   document.getElementById('m-body').innerHTML = html;
   document.getElementById('modal-box').classList.toggle('wide', wide);
@@ -388,11 +377,6 @@ function initModal() {
     if (e.target.id === 'modal-ov') closeModal();
   };
 }
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.notify = notify;
-window.initModal = initModal;
-})();
 
 // ── src/js/utils.js ─────────────────────────────────────────
 const fmt = n => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(n || 0);
@@ -431,7 +415,7 @@ function guessCategory(desc = '') {
 }
 
 // ── src/js/state.js ─────────────────────────────────────────
-(function(){const INIT = { transactions: [], recurring: [], budgets: [], categories: [], accounts: [], settings: {}, lastModified: null };
+const INIT = { transactions: [], recurring: [], budgets: [], categories: [], accounts: [], settings: {}, lastModified: null };
 let S = JSON.parse(JSON.stringify(INIT));
 let _stimer = null, _ready = false;
 let _cache = {};
@@ -482,18 +466,6 @@ function getAllTags() {
   S.transactions.forEach(t => (t.tags || []).forEach(tag => s.add(tag)));
   return [...s].sort();
 }
-window.loadState = loadState;
-window.save = save;
-window.processRecurring = processRecurring;
-window.mthTxs = mthTxs;
-window.getAllTags = getAllTags;
-window.S = S;
-window.allCats = allCats;
-window.getCat = getCat;
-window.getAccs = getAccs;
-window.getAcc = getAcc;
-window.INIT = INIT;
-})();
 
 // ── src/js/pdfParser.js ─────────────────────────────────────
 (function(){const PDFJS_LOCAL = './pdf.min.js';
@@ -1649,7 +1621,7 @@ window.saveSplit = saveSplit;
 })();
 
 // ── src/js/router.js ────────────────────────────────────────
-(function(){let _view = 'dash';
+let _view = 'dash';
 let _month = curYM();
 function navigate(v) {
   _view = v;
@@ -1686,18 +1658,9 @@ function mthNav() {
   const [y, m] = _month.split('-').map(Number);
   return `<div class="mth-nav"><button data-action="prevMonth">‹</button><span>${MONTHS_L[m - 1]} ${y}</span><button data-action="nextMonth">›</button></div>`;
 }
-window.navigate = navigate;
-window.render = render;
-window.prevMonth = prevMonth;
-window.nextMonth = nextMonth;
-window.setMonth = setMonth;
-window.mthNav = mthNav;
-window._view = _view;
-window._month = _month;
-})();
 
 // ── src/js/app.js ───────────────────────────────────────────
-(function(){// ── INIT ──────────────────────────────────────────────────────────
+// ── INIT ──────────────────────────────────────────────────────────
 initModal();
 document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.view)));
 document.getElementById('fab').onclick = () => openTxForm();
@@ -1779,7 +1742,6 @@ document.addEventListener('change', e => {
 // ── BOOT ──────────────────────────────────────────────────────────
 loadState().then(() => render());
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-})();
 </script>
 </body>
 </html>
