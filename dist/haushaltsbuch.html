@@ -1170,6 +1170,7 @@ function pdfImport() {
   S.transactions.push(...news);
   _csvCnt = news.length;
   _pdfTxs = [];
+  if (news.length) { const latest = news.sort((a, b) => b.date.localeCompare(a.date))[0]; setMonth(latest.date.slice(0, 7)); }
   save(); _step = 4; reImport();
   notify(`✅ ${news.length} Buchungen importiert`);
 }
@@ -1184,6 +1185,7 @@ function csvImport() {
   const news = all.filter(t => !keys.has(`${t.date}|${t.amount}|${t.description}`));
   S.transactions.push(...news);
   _csvCnt = news.length;
+  if (news.length) { const latest = news.sort((a, b) => b.date.localeCompare(a.date))[0]; setMonth(latest.date.slice(0, 7)); }
   save(); _step = 4; reImport();
   notify(`✅ ${news.length} Buchungen importiert`);
 }
