@@ -103,6 +103,10 @@ export function csvLoad(inp) {
     // Sparkasse/Deutsche Bank: Soll/Haben separate columns instead of single Betrag
     _map.soll = String(hl.findIndex(x => /^soll$/i.test(x)));
     _map.haben = String(hl.findIndex(x => /^haben$/i.test(x)));
+    // Detect bank format
+    const hdrJoined = _hdr.join(';').toLowerCase();
+    if (/buchungstag.*umsatzart.*begünstigter.*soll.*haben/.test(hdrJoined)) notify('🏦 Deutsche Bank Format erkannt');
+    else if (/buchungstag.*betrag/.test(hdrJoined)) notify('🏦 Bank-CSV erkannt');
     _step = 2; reImport();
   };
   reader.readAsText(f, 'UTF-8');

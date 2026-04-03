@@ -6,10 +6,10 @@
 <title>Haushaltsbuch</title>
 <style>
 :root{
-  --bg:#0f0d0b;--card:#191510;--card2:#201c16;--border:#2a251e;
-  --accent:#e8a020;--accent2:#f5c55a;
-  --income:#4caf72;--expense:#e05555;--muted:#7a7060;
-  --txt:#f0ead8;--txt2:#c8bfa8;
+  --bg:#111111;--card:#1a1816;--card2:#22201e;--border:#2e2a24;
+  --accent:#FFB000;--accent2:#FFD060;
+  --income:#3DAA6D;--expense:#D94545;--muted:#807468;
+  --txt:#F0E8D0;--txt2:#C8BDA5;
   --r:14px;--r2:10px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -19,7 +19,7 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:system-u
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
 #shell{display:flex;height:100vh;overflow:hidden}
-#nav{width:200px;min-width:200px;background:#0a0906;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 10px;gap:2px;z-index:10}
+#nav{width:200px;min-width:200px;background:#0d0d0d;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 10px;gap:2px;z-index:10}
 #main{flex:1;overflow-y:auto;padding:32px 40px}
 #content{max-width:920px;margin:0 auto}
 
@@ -1143,6 +1143,10 @@ function csvLoad(inp) {
     // Sparkasse/Deutsche Bank: Soll/Haben separate columns instead of single Betrag
     _map.soll = String(hl.findIndex(x => /^soll$/i.test(x)));
     _map.haben = String(hl.findIndex(x => /^haben$/i.test(x)));
+    // Detect bank format
+    const hdrJoined = _hdr.join(';').toLowerCase();
+    if (/buchungstag.*umsatzart.*begünstigter.*soll.*haben/.test(hdrJoined)) notify('🏦 Deutsche Bank Format erkannt');
+    else if (/buchungstag.*betrag/.test(hdrJoined)) notify('🏦 Bank-CSV erkannt');
     _step = 2; reImport();
   };
   reader.readAsText(f, 'UTF-8');
