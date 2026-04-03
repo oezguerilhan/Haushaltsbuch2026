@@ -739,13 +739,14 @@ function parseDeutscheBank(items) {
   const datePartRe = /^(\d{2}\.\d{2}\.)$/;
   const yearRe = /^(20\d{2})$/;
   const amountRe = /^([+-])\s*(\d{1,3}(?:\.\d{3})*,\d{2})$/;
+  const bareAmountRe = /^(\d{1,3}(?:\.\d{3})*,\d{2})$/;
 
   let i = 0;
   while (i < rows.length) {
     const rowText = rows[i].items.map(it => it.text).join(' ');
 
     // Skip page headers, footers, metadata
-    if (/^Deutsche Bank|^Filiale|^Lindenallee|^Herr|^Telefon|^24h-|^Kontoauszug|^Kontoinhaber|^Auszug|^Seite|^IBAN|^Alter Saldo|^Neuer Saldo|^Buchung|^Valuta|^Vorgang|^Soll|^Haben|^0000000/i.test(rowText)) {
+    if (/^Deutsche Bank|^Filiale|^Lindenallee|^Herr|^Telefon|^24h-|^Kontoauszug|^Kontoinhaber|^Auszug|^Seite|^IBAN|^Alter Saldo|^Neuer Saldo|^Buchung|^Valuta|^Vorgang|^Soll|^Haben|^0000000|^Kundennummer|^Gebuchte|^Zeitraum|^Konto \(|^Kontostand|^von \d|^DE\d{2}\s/i.test(rowText)) {
       i++; continue;
     }
     if (/^\s*$/.test(rowText) || rowText.length < 3) { i++; continue; }
@@ -783,11 +784,22 @@ function parseDeutscheBank(items) {
     if (amount === 0) {
       for (let j = 0; j < allItems.length - 1; j++) {
         if (allItems[j].text === '-' || allItems[j].text === '+') {
-          const numMatch = allItems[j + 1]?.text.match(/^(\d{1,3}(?:\.\d{3})*,\d{2})$/);
+          const numMatch = allItems[j + 1]?.text.match(bareAmountRe);
           if (numMatch) {
             amount = parseFloat(numMatch[1].replace(/\./g, '').replace(',', '.'));
             type = allItems[j].text === '+' ? 'income' : 'expense';
           }
+        }
+      }
+    }
+
+    // Check for bare amounts without +/- sign (Haben in newer DB format)
+    if (amount === 0) {
+      for (const it of allItems) {
+        const m = it.text.match(bareAmountRe);
+        if (m && !datePartRe.test(it.text) && !yearRe.test(it.text)) {
+          amount = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+          type = 'income'; // No sign = Haben (credit)
         }
       }
     }
@@ -814,10 +826,18 @@ function parseDeutscheBank(items) {
 
       // Check for amounts in continuation rows (sometimes amount is on a later line)
       for (const it of nextItems) {
-        const m = it.text.match(amountRe);
-        if (m && amount === 0) {
-          amount = parseFloat(m[2].replace(/\./g, '').replace(',', '.'));
-          type = m[1] === '+' ? 'income' : 'expense';
+        if (amount === 0) {
+          const m = it.text.match(amountRe);
+          if (m) {
+            amount = parseFloat(m[2].replace(/\./g, '').replace(',', '.'));
+            type = m[1] === '+' ? 'income' : 'expense';
+          } else {
+            const bm = it.text.match(bareAmountRe);
+            if (bm && !datePartRe.test(it.text) && !yearRe.test(it.text)) {
+              amount = parseFloat(bm[1].replace(/\./g, '').replace(',', '.'));
+              type = 'income';
+            }
+          }
         }
       }
 
@@ -921,7 +941,7 @@ async function parsePdfFile(file) {
   const items = await extractPdfItems(file);
   const fullText = items.map(i => i.text).join(' ');
   // Check Deutsche Bank FIRST — its PDFs may contain Trade Republic BIC in transactions
-  const isDeutscheBank = /Deutsche Bank AG/i.test(fullText);
+  const isDeutscheBank = /Deutsche Bank AG|Deutsche Bank$|Gebuchte Umsätze.*AktivKonto/im.test(fullText);
   const isTradeRepublic = !isDeutscheBank && /trade\s*republic|TRBKDEBBXXX/i.test(fullText);
 
   let txs;
