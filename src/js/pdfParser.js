@@ -237,6 +237,159 @@ function parseTradeRepublic(items) {
 }
 
 /**
+ * Parse Deutsche Bank PDF format.
+ * Date: "DD.MM.\nYYYY" (split across 2 lines, appears twice: Buchung + Valuta)
+ * Description: multi-line "SEPA Lastschrift von\nName\nVerwendungszweck/..."
+ * Amounts: "- 29,00" or "+ 350,00" (with space after sign) in Soll/Haben columns
+ */
+function parseDeutscheBank(items) {
+  const transactions = [];
+
+  // Sort by page, Y desc, X asc
+  items.sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x);
+
+  // Group into rows by Y (tolerance 3px)
+  const rows = [];
+  let currentRow = [], lastY = null;
+  for (const item of items) {
+    if (lastY !== null && Math.abs(item.y - lastY) > 3) {
+      if (currentRow.length) rows.push({ y: lastY, items: [...currentRow] });
+      currentRow = [];
+    }
+    currentRow.push(item);
+    lastY = item.y;
+  }
+  if (currentRow.length) rows.push({ y: lastY, items: currentRow });
+
+  // Scan for transaction pattern: DD.MM. at start of row
+  const datePartRe = /^(\d{2}\.\d{2}\.)$/;
+  const yearRe = /^(20\d{2})$/;
+  const amountRe = /^([+-])\s*(\d{1,3}(?:\.\d{3})*,\d{2})$/;
+
+  let i = 0;
+  while (i < rows.length) {
+    const rowText = rows[i].items.map(it => it.text).join(' ');
+
+    // Skip page headers, footers, metadata
+    if (/^Deutsche Bank|^Filiale|^Lindenallee|^Herr|^Telefon|^24h-|^Kontoauszug|^Kontoinhaber|^Auszug|^Seite|^IBAN|^Alter Saldo|^Neuer Saldo|^Buchung|^Valuta|^Vorgang|^Soll|^Haben|^0000000/i.test(rowText)) {
+      i++; continue;
+    }
+    if (/^\s*$/.test(rowText) || rowText.length < 3) { i++; continue; }
+
+    // Look for date pattern "DD.MM." at the leftmost position
+    const firstItem = rows[i].items[0];
+    if (!firstItem || !datePartRe.test(firstItem.text)) { i++; continue; }
+
+    const datePart = firstItem.text; // "02.12."
+
+    // Next row should contain the year "2024"
+    if (i + 1 >= rows.length) { i++; continue; }
+    const yearRowItems = rows[i + 1].items;
+    const yearItem = yearRowItems[0];
+    if (!yearItem || !yearRe.test(yearItem.text)) { i++; continue; }
+
+    const year = yearItem.text;
+    const dateStr = datePart + year; // "02.12.2024"
+
+    // Collect the amount from the date row (rightmost items)
+    // Deutsche Bank puts amount at far right: "- 29,00" or "+ 350,00"
+    let amount = 0, type = 'expense';
+    const allItems = [...rows[i].items, ...yearRowItems];
+
+    // Find amount pattern in all items of these 2 rows
+    for (const it of allItems) {
+      const m = it.text.match(amountRe);
+      if (m) {
+        amount = parseFloat(m[2].replace(/\./g, '').replace(',', '.'));
+        type = m[1] === '+' ? 'income' : 'expense';
+      }
+    }
+
+    // Also check for standalone amounts: number after +/- on next items
+    if (amount === 0) {
+      for (let j = 0; j < allItems.length - 1; j++) {
+        if (allItems[j].text === '-' || allItems[j].text === '+') {
+          const numMatch = allItems[j + 1]?.text.match(/^(\d{1,3}(?:\.\d{3})*,\d{2})$/);
+          if (numMatch) {
+            amount = parseFloat(numMatch[1].replace(/\./g, '').replace(',', '.'));
+            type = allItems[j].text === '+' ? 'income' : 'expense';
+          }
+        }
+      }
+    }
+
+    // Collect description from remaining text items (skip dates, amounts, +/-)
+    const descParts = [];
+    const skipSet = new Set([datePart, year, '+', '-', '€']);
+    for (const it of allItems) {
+      if (skipSet.has(it.text)) continue;
+      if (/^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(it.text)) continue;
+      if (datePartRe.test(it.text) || yearRe.test(it.text)) continue;
+      if (amountRe.test(it.text)) continue;
+      descParts.push(it.text);
+    }
+
+    // Collect continuation rows (description, Verwendungszweck, etc.)
+    let extraIdx = i + 2;
+    while (extraIdx < rows.length) {
+      const nextItems = rows[extraIdx].items;
+      const nextText = nextItems.map(it => it.text).join(' ');
+      // Stop at next transaction (date pattern) or page header
+      if (datePartRe.test(nextItems[0]?.text || '')) break;
+      if (/^Deutsche Bank|^Auszug|^Seite|^0000000|^Alter Saldo|^Neuer Saldo|^Buchung|^Valuta/i.test(nextText)) break;
+
+      // Check for amounts in continuation rows (sometimes amount is on a later line)
+      for (const it of nextItems) {
+        const m = it.text.match(amountRe);
+        if (m && amount === 0) {
+          amount = parseFloat(m[2].replace(/\./g, '').replace(',', '.'));
+          type = m[1] === '+' ? 'income' : 'expense';
+        }
+      }
+
+      // Add text (skip Gläubiger-ID, Mand-ID, RCUR etc.)
+      if (!/^Gläubiger-ID|^Mand-ID|^RCUR|^OTHR|^FRST|^OOFF/i.test(nextText)) {
+        for (const it of nextItems) {
+          if (skipSet.has(it.text)) continue;
+          if (/^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(it.text)) continue;
+          if (amountRe.test(it.text)) continue;
+          descParts.push(it.text);
+        }
+      }
+      extraIdx++;
+    }
+
+    if (amount > 0) {
+      let desc = descParts.join(' ').trim();
+      // Clean up description: remove "Verwendungszweck/ Kundenreferenz" prefix
+      desc = desc.replace(/Verwendungszweck\/?\s*Kundenreferenz\s*/gi, '').trim();
+      // Extract the main payee name (first line after "SEPA ... von")
+      const sepaMatch = desc.match(/^SEPA\s+\w+(?:\s+\w+)?\s+(?:von|an)\s+(.+?)(?:\s+Verwendung|\s+\d)/i);
+      const payee = sepaMatch ? sepaMatch[1].trim() : '';
+      const shortDesc = payee || desc.split(/\s{2,}/)[0] || desc.slice(0, 60);
+
+      transactions.push({
+        id: uid(),
+        date: parseDeDate(dateStr),
+        amount,
+        type,
+        description: shortDesc,
+        category: guessCategory(shortDesc) || guessCategory(desc) || (type === 'income' ? 'sonstiges_e' : 'sonstiges_a'),
+        account: 'girokonto',
+        tags: [],
+        source: 'import',
+        createdAt: Date.now(),
+        note: 'PDF-Import (Deutsche Bank)',
+      });
+    }
+
+    i = extraIdx;
+  }
+
+  return transactions;
+}
+
+/**
  * Generic bank statement parser fallback
  */
 function parseGenericBank(items) {
@@ -294,8 +447,12 @@ async function parsePdfFile(file) {
   const items = await extractPdfItems(file);
   const fullText = items.map(i => i.text).join(' ');
   const isTradeRepublic = /trade\s*republic|TRBKDEBBXXX/i.test(fullText);
+  const isDeutscheBank = /Deutsche Bank AG|DE74\s*3607\s*0024/i.test(fullText);
 
-  let txs = isTradeRepublic ? parseTradeRepublic(items) : parseGenericBank(items);
+  let txs;
+  if (isTradeRepublic) txs = parseTradeRepublic(items);
+  else if (isDeutscheBank) txs = parseDeutscheBank(items);
+  else txs = parseGenericBank(items);
 
   // Deduplicate
   const seen = new Set();
